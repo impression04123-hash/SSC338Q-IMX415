@@ -1,0 +1,45 @@
+config BR2_PACKAGE_MAJESTIC_WEBUI
+	bool "majestic-webui"
+	select BR2_PACKAGE_HASERL
+	help
+	  Simple web interface.
+	  https://openipc.org
+
+if BR2_PACKAGE_MAJESTIC_WEBUI
+
+config BR2_PACKAGE_MAJESTIC_WEBUI_SMS
+	bool "SMS page"
+	help
+	  The SMS page: the inbox a cellular modem keeps, sending, USSD
+	  balance and package codes, and forwarding new messages to
+	  Telegram. Only of use on a board with a USB cellular modem, so it
+	  is left out unless a device profile asks for it.
+
+config BR2_PACKAGE_MAJESTIC_WEBUI_PTZ
+	bool "PTZ controls"
+	default y if BR2_PACKAGE_GPIO_MOTORS || BR2_PACKAGE_MAJESTIC_AF
+	help
+	  The Live page's pan/tilt pad, zoom and focus buttons and
+	  follow mode. They move motors through gpio-motors or the
+	  majestic-af plugin, so the option is on wherever either is in
+	  the image; a board whose driver comes from elsewhere selects it.
+
+config BR2_PACKAGE_MAJESTIC_WEBUI_COUNTING
+	bool "Counting page"
+	default y if BR2_PACKAGE_XMNPU_MODELS || BR2_PACKAGE_CPU_MODELS
+	help
+	  The Counting page: people crossing lines in and out, who is in
+	  each zone and for how long, by the hour and by the day. Counting
+	  runs on majestic's object detection, so the option is on wherever
+	  the image carries a detection model (xmnpu-models for the NPU,
+	  cpu-models for the CPU); without one there is nothing to count
+	  with.
+
+config BR2_PACKAGE_MAJESTIC_WEBUI_FPV
+	bool "FPV (wfb-ng) settings page"
+	default y if BR2_OPENIPC_VARIANT = "fpv" || BR2_OPENIPC_VARIANT = "wfbng"
+	help
+	  The WFB settings page for wfb-ng video links. On by default for
+	  the fpv and wfbng variants, which are what carry wfb-ng.
+
+endif

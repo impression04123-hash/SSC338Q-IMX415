@@ -1,0 +1,50 @@
+{
+  "repositories": [
+    {
+      "repository": "research",
+      "ok": true,
+      "problems": []
+    },
+    {
+      "repository": "wfb-ng",
+      "ok": true,
+      "problems": []
+    },
+    {
+      "repository": "msposd",
+      "ok": true,
+      "problems": []
+    },
+    {
+      "repository": "rtl88x2eu-20230815",
+      "ok": true,
+      "problems": []
+    },
+    {
+      "repository": "rtl8812eu-wfb",
+      "ok": true,
+      "problems": []
+    },
+    {
+      "repository": "divinus",
+      "ok": true,
+      "problems": []
+    },
+    {
+      "repository": "builder",
+      "ok": true,
+      "problems": []
+    },
+    {
+      "repository": "firmware",
+      "ok": true,
+      "problems": []
+    }
+  ],
+  "key_files_checked": 23,
+  "missing_key_files": [],
+  "wfb_ng_matches_firmware_recipe": true,
+  "files": 7983,
+  "bytes": 436621414,
+  "ok": true
+}

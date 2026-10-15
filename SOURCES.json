@@ -1,0 +1,95 @@
+{
+  "downloaded_at": "2026-10-15T16:11:05.976471+00:00",
+  "root": "E:\\Users\\Color\\Good study\\Linux\\OpenIPC",
+  "method": "git shallow fetch, depth=1, detached HEAD; no build/install/flash performed",
+  "repositories": [
+    {
+      "directory": "research",
+      "upstream": "https://github.com/OpenIPC/research.git",
+      "requested_ref": "master",
+      "purpose": "SSC338Q multimedia examples and HiSilicon VDEC/VO/HDMI receiver",
+      "commit": "30e6fa0a546e218f0a83eae6e48c17f91a76081c",
+      "commit_date": "2026-03-21T11:09:47+01:00",
+      "tracked_files": 661,
+      "status": "downloaded",
+      "submodules": []
+    },
+    {
+      "directory": "wfb-ng",
+      "upstream": "https://github.com/svpcom/wfb-ng.git",
+      "requested_ref": "ae2122c1fb70cd215bbc2e1b517b7b91f9401220",
+      "purpose": "WFB-ng version selected by the current OpenIPC firmware recipe",
+      "commit": "ae2122c1fb70cd215bbc2e1b517b7b91f9401220",
+      "commit_date": "2026-02-03T12:37:47+03:00",
+      "tracked_files": 108,
+      "status": "downloaded",
+      "submodules": []
+    },
+    {
+      "directory": "msposd",
+      "upstream": "https://github.com/OpenIPC/msposd.git",
+      "requested_ref": "main",
+      "purpose": "UART MSP DisplayPort parsing, OSD and SITL/replay instructions",
+      "commit": "ad0175ce01c4e09b3eb4223fd683735f9df22715",
+      "commit_date": "2026-09-27T23:24:29+03:00",
+      "tracked_files": 658,
+      "status": "downloaded",
+      "submodules": []
+    },
+    {
+      "directory": "rtl88x2eu-20230815",
+      "upstream": "https://github.com/libc0607/rtl88x2eu-20230815.git",
+      "requested_ref": "v5.15.0.1",
+      "purpose": "RTL8812EU/RTL8822EU driver selected by the firmware recipe",
+      "commit": "12977e4013ecafbae993b3b08d46bff87d6d7c67",
+      "commit_date": "2026-10-02T21:48:20+08:00",
+      "tracked_files": 719,
+      "status": "downloaded",
+      "submodules": []
+    },
+    {
+      "directory": "rtl8812eu-wfb",
+      "upstream": "https://github.com/svpcom/rtl8812eu.git",
+      "requested_ref": "v5.15.0.1",
+      "purpose": "WFB-ng upstream recommended patched driver, for comparison",
+      "commit": "48e6e449e089fa954e4e15079bd864039e2960da",
+      "commit_date": "2026-04-13T21:05:45+08:00",
+      "tracked_files": 719,
+      "status": "downloaded",
+      "submodules": []
+    },
+    {
+      "directory": "divinus",
+      "upstream": "https://github.com/OpenIPC/divinus.git",
+      "requested_ref": "master",
+      "purpose": "Alternative open-source camera streaming implementation, reference only",
+      "commit": "10409f41031e4bf0e8d7a8aaf83003c559daa89f",
+      "commit_date": "2026-10-14T05:15:38Z",
+      "tracked_files": 308,
+      "status": "downloaded",
+      "submodules": []
+    },
+    {
+      "directory": "builder",
+      "upstream": "https://github.com/OpenIPC/builder.git",
+      "requested_ref": "master",
+      "purpose": "Device build overlays including Hi3536DV100 WFB-ng configuration",
+      "commit": "214075f0c426f9fb6749f81a726d3e88600a314d",
+      "commit_date": "2026-10-15T08:27:24+03:00",
+      "tracked_files": 654,
+      "status": "downloaded",
+      "submodules": []
+    },
+    {
+      "directory": "firmware",
+      "upstream": "https://github.com/OpenIPC/firmware.git",
+      "requested_ref": "master",
+      "purpose": "Firmware build integration, chip libraries, package recipes and service scripts",
+      "commit": "1d9c834e09db66967d6fc2899e5acd89b6446482",
+      "commit_date": "2026-10-15T17:48:20+03:00",
+      "tracked_files": 3933,
+      "status": "downloaded",
+      "submodules": []
+    }
+  ]
+}

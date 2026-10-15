@@ -1,0 +1,43 @@
+config BR2_PACKAGE_OPUS_OPENIPC
+	bool "opus-openipc"
+	help
+	  The Opus codec is designed for interactive speech and audio
+	  transmission over the Internet. It is designed by the IETF
+	  Codec Working Group and incorporates technology from Skype's
+	  SILK codec and Xiph.Org's CELT codec.
+
+	  It is intended to suit a wide range of interactive audio
+	  applications, including Voice over IP, videoconferencing,
+	  in-game chat, and even remote live music performances. It
+	  can scale from low bit-rate narrowband speech to very high
+	  quality stereo music.
+
+	  http://opus-codec.org
+
+if BR2_PACKAGE_OPUS_OPENIPC
+
+config BR2_PACKAGE_OPUS_OPENIPC_FIXED_POINT
+	bool "use fixed-point" if !BR2_SOFT_FLOAT
+	default y if BR2_SOFT_FLOAT
+	help
+	  Compile without floating point operations (for machines
+	  without a fast enough FPU).
+
+config BR2_PACKAGE_OPUS_OPENIPC_HISI_SHIM
+	bool "bake in HiSilicon ot_opus_* shim"
+	help
+	  Add an open-source implementation of the 6 ot_opus_*
+	  wrapper functions (ot_opusenc_create/_destroy/_process_frame
+	  + ot_opusdec_* counterparts) to libopus.so.
+
+	  The HiSilicon Hi3516CV6xx (V5) vendor MPP audio adapter
+	  libss_mpi_audio_adp.so resolves these symbols at runtime
+	  against the closed vendor libopus.so. Enabling this option
+	  lets us drop the vendor blob and ship a single open libopus
+	  that satisfies both the standard libopus.so.0 SONAME and the
+	  vendor binary's unversioned libopus.so DT_NEEDED.
+
+	  Only needed on SoC families whose closed userspace expects
+	  the ot_opus_* surface. Leave off otherwise.
+
+endif

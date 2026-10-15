@@ -1,0 +1,9 @@
+#
+# The selector BR2_OPENIPC_SNS_MODEL="os02g10" is now working, and it is no longer necessary to forcibly delete unnecessary .ko and .bin sensor files.
+#
+/lib/modules/4.9.84/kernel/fs/lockd/lockd.ko
+/lib/modules/4.9.84/kernel/fs/nfs/nfs.ko
+/lib/modules/4.9.84/kernel/fs/nfs/nfsv3.ko
+/lib/modules/4.9.84/kernel/fs/nfs_common/grace.ko
+/lib/modules/4.9.84/kernel/net/sunrpc/sunrpc.ko
+/usr/share/openipc/sounds/ready_48k.pcm

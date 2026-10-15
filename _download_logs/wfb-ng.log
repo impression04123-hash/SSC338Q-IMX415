@@ -1,0 +1,135 @@
+$ git init -q E:\Users\Color\Good study\Linux\OpenIPC\wfb-ng
+
+$ git config core.autocrlf false
+
+$ git config core.longpaths true
+
+$ git remote
+
+$ git remote add origin https://github.com/svpcom/wfb-ng.git
+
+$ git -c http.version=HTTP/1.1 fetch --depth=1 --no-tags origin ae2122c1fb70cd215bbc2e1b517b7b91f9401220
+From https://github.com/svpcom/wfb-ng
+ * branch            ae2122c1fb70cd215bbc2e1b517b7b91f9401220 -> FETCH_HEAD
+
+$ git -c advice.detachedHead=false checkout --detach FETCH_HEAD
+HEAD is now at ae2122c Add optional injection retry
+
+$ git rev-parse HEAD
+ae2122c1fb70cd215bbc2e1b517b7b91f9401220
+
+$ git show -s --format=%cI HEAD
+2026-02-03T12:37:47+03:00
+
+$ git ls-files
+.github/ISSUE_TEMPLATE/bug_report.md
+.github/ISSUE_TEMPLATE/question.md
+.github/workflows/build_debian.yml
+.github/workflows/build_pi.yml
+.github/workflows/build_redhat.yml
+.github/workflows/build_ubuntu.yml
+.github/workflows/codeql-analysis.yml
+.gitignore
+.hgignore
+.pylintrc
+CONTRIBUTING.md
+Changelog.md
+LICENSE.txt
+Makefile
+README.md
+SECURITY.md
+debian/postinst
+debian/postrm
+debian/prerm
+doc/Analysis of Injection Capabilities and Media Access of IEEE 802.11 Hardware in Monitor Mode.pdf
+doc/Makefile
+doc/enhanced_setup.dot
+doc/logo-big.png
+doc/logo-small.png
+doc/mimo_for_dummies.pdf
+doc/wfb-ng-std-draft.md
+docker/Dockerfile.debian
+docker/Dockerfile.redhat
+docker/src/.gitignore
+openwrt/README.md
+openwrt/net/wfb-ng-full/Makefile
+openwrt/net/wfb-ng-full/files/wfb-ng.init
+openwrt/net/wfb-ng/Makefile
+openwrt/net/wfb-ng/files/wfb-ng.init
+scripts/bind/init_drone.sh
+scripts/bind/init_gs.sh
+scripts/bind/wfb_bind_client.sh
+scripts/bind/wfb_bind_server.sh
+scripts/default/wifibroadcast
+scripts/default/wifibroadcast.drone_bind
+scripts/default/wifibroadcast.gs_bind
+scripts/install_gs.sh
+scripts/logrotate/wifibroadcast
+scripts/qemu/qemu-binfmt-conf.sh
+scripts/qemu/qemu.patch
+scripts/rx_standalone.sh
+scripts/sysctl/98-wifibroadcast.conf
+scripts/systemd/fpv-camera.service
+scripts/systemd/fpv-video.service
+scripts/systemd/osd.service
+scripts/systemd/rtsp@.service
+scripts/systemd/wfb-cluster-manager@.service
+scripts/systemd/wfb-cluster-node.service
+scripts/systemd/wfb-cluster.service
+scripts/systemd/wifibroadcast.service
+scripts/systemd/wifibroadcast@.service
+scripts/tc.sh
+scripts/tx_standalone.sh
+scripts/video_test_sink.sh
+scripts/video_test_src.sh
+scripts/wfb-cli-x11
+scripts/wfb-nics
+setup.py
+src/fec_test.cpp
+src/ieee80211_radiotap.h
+src/keygen.c
+src/libsodium_test.cpp
+src/radiotap.c
+src/rtsp_server.c
+src/rx.cpp
+src/rx.hpp
+src/tx.cpp
+src/tx.hpp
+src/tx_cmd.c
+src/tx_cmd.h
+src/wfb_tun.c
+src/wifibroadcast.cpp
+src/wifibroadcast.hpp
+src/zfex.c
+src/zfex.h
+src/zfex_bytemask.h
+src/zfex_macros.h
+src/zfex_pp.h
+src/zfex_status.h
+stdeb.cfg
+version.py
+wfb_ng/__init__.py
+wfb_ng/cli.py
+wfb_ng/cluster.py
+wfb_ng/common.py
+wfb_ng/conf/__init__.py
+wfb_ng/conf/local.cfg
+wfb_ng/conf/master.cfg
+wfb_ng/config_parser.py
+wfb_ng/latency_test.py
+wfb_ng/log_parser.py
+wfb_ng/mavlink.py
+wfb_ng/mavlink_protocol.py
+wfb_ng/protocols.py
+wfb_ng/proxy.py
+wfb_ng/server.py
+wfb_ng/services.py
+wfb_ng/tests/__init__.py
+wfb_ng/tests/test_proxy.py
+wfb_ng/tests/test_tuntap.py
+wfb_ng/tests/test_twisted.py
+wfb_ng/tests/test_txrx.py
+wfb_ng/tuntap.py
+
+$ git submodule status
+

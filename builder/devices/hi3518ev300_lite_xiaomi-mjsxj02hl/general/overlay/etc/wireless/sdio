@@ -1,0 +1,21 @@
+#!/bin/sh
+
+set_gpio() {
+	[ "$2" -eq 1 ] && gpio set $1 || gpio clear $1
+	sleep 1
+}
+
+if [ "$1" = "rtl8189fs-mjsxj02hl" ]; then
+	devmem 0x112C0048 32 0x1D54
+	devmem 0x112C004C 32 0x1174
+	devmem 0x112C0064 32 0x1174
+	devmem 0x112C0060 32 0x1174
+	devmem 0x112C005C 32 0x1174
+	devmem 0x112C0058 32 0x1174
+	devmem 0x10020028 32 0x28000000
+	devmem 0x10020028 32 0x20000000
+        modprobe 8189fs
+        exit 0
+fi
+
+exit 1

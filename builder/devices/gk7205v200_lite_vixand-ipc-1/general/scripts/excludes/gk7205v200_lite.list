@@ -1,0 +1,11 @@
+/etc/sensors/60fps/*.ini
+/etc/sensors/WDR/*.ini
+/etc/sensors/*.ini
+#
+/etc/sensors/iq/*.ini
+#
+/usr/lib/sensors/*.so
+#
+/lib/modules/4.9.37/kernel/drivers/i2c/*/*.ko
+/lib/modules/4.9.37/kernel/drivers/scsi/*.ko
+/lib/modules/4.9.37/kernel/fs/f2fs/*.ko

@@ -1,0 +1,92 @@
+name: lint
+on:
+  pull_request:
+    branches:
+      - master
+  # A push trigger, unlike shell-tests in OpenIPC/firmware, which deliberately
+  # has none. The reasoning there -- every commit on master was already checked
+  # on its pull request -- holds only while master has not moved between the
+  # PR's last run and the merge. This job is the one thing standing between a
+  # workflow typo and a silently lost nightly, it costs seconds, and #121 cost
+  # a full night's release because nothing re-checked the merged result. Cheap
+  # enough to not be clever about.
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/**'
+      - '.github/scripts/lint-workflow-shell.py'
+      - '.github/scripts/lint-cli-paths.py'
+      - '.github/scripts/push_build.py'
+      - '.github/scripts/soc_aliases.py'
+      - '.github/scripts/test_push_build.py'
+  workflow_dispatch:
+
+# Reads the tree and reports; writes nothing. Declared rather than inherited so
+# the job keeps the narrow token whatever the repo or org default becomes.
+permissions:
+  contents: read
+
+jobs:
+  # Same guard the jobs in master.yml carry. A clone pushed to a new repository
+  # inherits this file, and on a private mirror every master sync push would
+  # otherwise run on that owner's bill. Upstream the first disjunct is true, so
+  # the condition is a tautology here.
+  workflow-shell:
+    name: workflow run blocks parse
+    if: >-
+      github.repository == 'OpenIPC/builder' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && !github.event.repository.private)
+    runs-on: ubuntu-latest
+    # The work takes about a second. The default is six hours, which is how a
+    # step that hangs rather than fails sits there occupying a runner and
+    # telling nobody -- see the apt note below.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # ubuntu-latest ships PyYAML, so the common path must not touch the
+      # network: the first master push after #122 ran an unconditional
+      # `apt-get update` here and sat on it for six minutes, on a job whose
+      # entire argument for existing is that it answers in seconds. Import
+      # first, install only if that fails -- the dependency is still handled
+      # rather than assumed, but a working runner pays nothing for it. apt
+      # rather than pip in the fallback because 24.04 is PEP 668.
+      - name: Ensure PyYAML
+        run: |
+          if python3 -c 'import yaml' 2>/dev/null; then
+            echo "PyYAML already present; nothing to install."
+          else
+            echo "PyYAML missing from the runner image; installing."
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq python3-yaml
+          fi
+      # Checks the checker before trusting it. The ${{ }} substitution it has to
+      # do is the kind of thing that breaks by making everything pass, which
+      # would look identical to a clean tree.
+      - name: Check the linter still catches what it should
+        run: python3 .github/scripts/lint-workflow-shell.py --self-test
+      - name: Parse every workflow run block
+        run: python3 .github/scripts/lint-workflow-shell.py
+      # The drift checker's own config has to keep describing this tree, the
+      # same way ci-matrix.py's NOT_BUILT does: a shadow entry for a device that
+      # was renamed is a name describing nothing, and it would go quiet exactly
+      # when it mattered. Self-test only -- the real check needs a firmware
+      # clone and runs on a schedule, because the drift it looks for is caused
+      # by commits in that repository and not by anything in a PR here.
+      - name: Check the drift checker still describes the tree
+        run: python3 .github/scripts/check-firmware-drift.py --self-test
+      # `cli -s` cannot fail: yaml-cli stores whatever dotted path it is given,
+      # and majestic silently ignores a key it does not recognise. So a typo in
+      # a setting path applies nothing and says nothing, for the life of the
+      # device. t40_lite_movols-mo-805p shipped six of them behind a trailing
+      # colon. Same shape as the checks above -- no runners, no matrix, seconds.
+      - name: Check the cli path linter still catches what it should
+        run: python3 .github/scripts/lint-cli-paths.py --self-test
+      - name: Check every shipped cli setting path
+        run: python3 .github/scripts/lint-cli-paths.py
+      # The nightly's report job is the only way openipc.org learns about a
+      # build, and it runs once, after publish, where nobody watches it. What
+      # it sends and how it authenticates are checked here instead.
+      - name: Test the build push
+        run: python3 .github/scripts/test_push_build.py

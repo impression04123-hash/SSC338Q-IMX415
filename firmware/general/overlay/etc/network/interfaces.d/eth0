@@ -1,0 +1,2 @@
+iface eth0 inet dhcp
+    hwaddress ether $(get_mac eth0)

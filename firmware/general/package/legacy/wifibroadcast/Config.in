@@ -1,0 +1,15 @@
+config BR2_PACKAGE_WIFIBROADCAST
+	bool "wifibroadcast"
+	select BR2_PACKAGE_LIBPCAP
+	select BR2_PACKAGE_LIBSODIUM
+	select BR2_PACKAGE_IW
+	select BR2_PACKAGE_DATALINK
+	# wfb_tun includes <event.h> and links -levent_core. Declared here so it
+	# builds against libevent-openipc, the library the image actually ships:
+	# with that package selected, the toolchain's own libevent headers are
+	# removed from staging, and an undeclared dependency finds none at all.
+	select BR2_PACKAGE_LIBEVENT_OPENIPC
+	help
+	  Transmit hd video over wifi for the UAV.
+
+	  https://github.com/svpcom/wfb-ng

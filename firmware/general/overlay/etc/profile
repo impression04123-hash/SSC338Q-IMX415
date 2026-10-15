@@ -1,0 +1,109 @@
+export PATH="/bin:/sbin:/usr/bin:/usr/sbin:/tmp"
+export EDITOR="/bin/vi"
+export HOME="/root"
+export SENSOR=$(fw_printenv -n sensor)
+export UPGRADE=$(fw_printenv -n upgrade)
+# Guarded: an empty TZ pins UTC on musl and skips the /etc/localtime fallback
+# that an unset TZ would use, so a missing /etc/TZ must leave TZ alone.
+[ -r /etc/TZ ] && export TZ=$(cat /etc/TZ)
+
+echo_c() {
+	echo -ne "\e[1;$1m$2\e[0m"
+}
+
+if [ "$PS1" ]; then
+	[ -f /etc/os-release ] && . /etc/os-release
+	[ -f /etc/openipc_banner ] && echo_c 34 "\n$(cat /etc/openipc_banner)"
+	echo_c 32 "$(printf %51s "$GITHUB_VERSION")"
+	[ -f /etc/openipc_donors ] && echo_c 37 "\n\n$(cat /etc/openipc_donors)\n\n"
+	if [ "$(id -u)" -eq 0 ]; then
+		export PS1='\u@\h:\w\# '
+	else
+		export PS1='\u@\h:\w\$ '
+	fi
+fi
+
+differ() {
+	diff -rN "/rom$1" "$1"
+}
+
+network() {
+	/etc/init.d/S40network "$1"
+}
+
+streamer() {
+	/etc/init.d/S95majestic "$1"
+}
+
+set_fullname() {
+	name=$(show_fullname)
+	[ -n "$name" ] || return 1
+	echo "$name" > /etc/hostname
+	hostname -F /etc/hostname
+	sed -i '/^127\.0\.1\.1/d' /etc/hosts 2>/dev/null
+	printf '127.0.1.1\t%s\n' "$name" >> /etc/hosts
+}
+
+# majestic writes only the settings that differ from its defaults, and the
+# image ships no majestic.yaml, so the file on the camera is the list of changes.
+show_config() {
+	if [ -s /etc/majestic.yaml ]; then
+		cat /etc/majestic.yaml
+	else
+		echo "Majestic is running on its defaults"
+	fi
+}
+
+show_fullname() {
+	soc=$(fw_printenv -n soc | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9]//g')
+	sensor=$(fw_printenv -n sensor | tr 'A-Z' 'a-z' | sed -e 's/_.*$//' -e 's/[^a-z0-9]//g')
+	echo "${soc}${sensor:+-$sensor}"
+}
+
+show_help() {
+	grep 'show.*()' /etc/profile | grep -v profile | cut -d '(' -f1
+}
+
+show_gain() {
+	while sleep 1; do wget -T1 -q -O - localhost/metrics/isp | grep ^isp_again; done
+}
+
+show_gpio() {
+	if [ -e /sys/kernel/debug ]; then
+		mount -t debugfs none /sys/kernel/debug
+		cat /sys/kernel/debug/gpio
+		umount /sys/kernel/debug
+	fi
+}
+
+show_modules() {
+	cat /proc/modules | cut -f1 -d " " | while read module; do
+		echo "Module: $module"
+		link=/sys/module/$module/parameters
+		if [ -d "$link" ]; then
+			ls "$link" | while read parameter; do
+				val=$(cat "$link/$parameter")
+				echo "  $parameter --> ${val:-none}"
+			done
+		fi
+		echo
+	done
+}
+
+show_wlan() {
+	grep -r '$1..=' /etc/wireless | cut -d '"' -f4 | sort | grep -e "$(fw_printenv -n soc)" -e generic
+}
+
+legacy_webui() {
+	curl -s -L https://github.com/openipc/webui/raw/master/files/usr/sbin/updatewebui.sh -o /tmp/webui.sh && sh /tmp/webui.sh
+}
+
+majestic_webui() {
+	curl -s -L https://raw.githubusercontent.com/openipc/majestic-webui/master/sbin/updatewebui -o /tmp/webui.sh && sh /tmp/webui.sh
+}
+
+# Source configuration files from /etc/profile.d
+for i in /etc/profile.d/*.sh; do
+	[ -r "$i" ] && . "$i"
+done
+unset i

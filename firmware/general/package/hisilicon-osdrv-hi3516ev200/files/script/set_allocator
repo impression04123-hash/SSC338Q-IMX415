@@ -1,0 +1,69 @@
+#!/bin/sh
+
+# The DDR size U-Boot measured, from the kernel's memory node, for an env that
+# has no totalmem saved -- see load_hisilicon, which calls this script with the
+# same fallback; without it here, `set_allocator cma` on a 128 MB part would
+# still write mem=64M.
+dt_mem_total() {
+  local reg
+  reg=$(hexdump -v -e '1/1 "%02x"' /proc/device-tree/memory/reg 2>/dev/null)
+  [ ${#reg} -eq 16 ] || return 0
+  reg=$((0x${reg#????????} / 1048576))
+  [ "$reg" -gt 0 ] && [ "$reg" -ne 512 ] && echo ${reg}M
+}
+
+get_env() {
+  bootargs=$(fw_printenv -n bootargs)
+  # Everything already on the command line except the three arguments this
+  # script decides, in the order it was in. The script used to rebuild
+  # bootargs from a fixed list of keys instead, and silently dropped whatever
+  # was not on it -- ubi.mtd among them, so the next boot of a NAND/UBI board
+  # could not attach ubi0 and panicked mounting its root (#2281).
+  kept=$(echo ${bootargs} | awk 'BEGIN { RS = " " } { sub(/\n$/, ""); k = $0; sub(/=.*/, "", k); if ($0 != "" && k != "mem" && k != "mmz" && k != "mmz_allocator") printf "%s ", $0 }')
+  osmem=$(fw_printenv -n osmem)
+  totalmem=$(fw_printenv -n totalmem 2>/dev/null)
+  [ -n "$totalmem" ] || totalmem=$(dt_mem_total)
+}
+
+calc_mmz() {
+  mem_start=0x40000000
+  mem_total=$(echo "$totalmem" | tr -d 'M')
+  mem_total=${mem_total:=64}
+  os_mem_size=$(fw_printenv -n osmem | tr -d 'M')
+  os_mem_size=${os_mem_size:=32}
+  mmz_start=$(echo "$mem_start $os_mem_size" | awk 'BEGIN { temp = 0; } { temp = $1/1024/1024 + $2; } END { printf("0x%x00000\n", temp); }')
+  mmz_size=$(echo "$mem_total $os_mem_size" | awk 'BEGIN { temp = 0; } { temp = $1 - $2; } END { printf("%dM\n", temp); }')
+  mmz=anonymous,0,$mmz_start,$mmz_size
+}
+
+
+# The zone `cma` would write, without writing it. The load script compares it
+# with the zone the kernel booted with: bootargs are written once, so an osmem
+# or totalmem changed afterwards never reached them on their own.
+if [ "$1" = 'mmz' ]; then
+  get_env
+  calc_mmz
+  echo "${mmz}"
+  exit 0
+fi
+
+if [[ "$1" == 'hisi' ]]; then
+  echo "Allocator selected as hisi..."
+  get_env
+  mem=${osmem:=32M}
+  newbootargs="mem=${mem} ${kept}mmz_allocator=hisi"
+  echo ${newbootargs}
+  fw_setenv bootargs ${newbootargs}
+  #
+elif [[ "$1" == 'cma'  ]]; then
+  echo "Allocator selected as cma..."
+  get_env
+  calc_mmz
+  mem=${totalmem:=64M}
+  newbootargs="mem=${mem} ${kept}mmz_allocator=cma mmz=${mmz}"
+  fw_setenv bootargs ${newbootargs}
+  echo ${newbootargs}
+else
+  echo "NO or WRONG allocator, please select hisi or cma."
+  exit 1
+fi

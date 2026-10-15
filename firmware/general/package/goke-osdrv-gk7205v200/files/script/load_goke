@@ -1,0 +1,529 @@
+#!/bin/sh
+####################Variables Definition##########################
+
+# SoC detect
+CHIP_TYPE=$(ipcinfo --chip-name)
+
+# Dumb cpu remapping
+if [ "$CHIP_TYPE" == "gk7205v210" ]; then
+  CHIP_TYPE=gk7205v200
+fi
+
+# Memory config
+mem_start=0x40000000 # phy mem start
+
+mem_total=$(fw_printenv -n totalmem | tr -d 'M')
+mem_total=${mem_total:=64}
+
+os_mem_size=$(fw_printenv -n osmem | tr -d 'M')
+os_mem_size=${os_mem_size:=32}
+
+BOARD=demo
+YUV_TYPE0=0 # 0 -- raw, 1 --DC, 2 --bt1120, 3 --bt656
+
+# DVP-wired sensor boards -- OPT-IN, set by the device profile.
+#
+# open_sys_config selects MIPI or DVP pad routing from its chip= and
+# g_cmos_yuv_flag= arguments. A board that wires the sensor to the DVP pads
+# needs the DVP path; with the MIPI arguments the i2c controller is muxed to
+# pads that are not connected to the sensor, so every address NACKs and no
+# sensor is ever detected.
+#
+# Keyed off an env var rather than the SoC name on purpose: both wirings exist
+# on gk7202v300, so testing $CHIP_TYPE here would fix DVP boards by breaking
+# every MIPI one. Profiles opt in with `fw_setenv sensor_dvp 1`.
+# SYSCFG_CHIP is the value handed to open_sys_config's chip= selector, which is
+# NOT the same thing as CHIP_TYPE (the detected SoC). They coincide by default;
+# a DVP board needs the gk7205v200 pad-routing tables while still BEING a
+# gk7202v300. Keeping them separate leaves CHIP_TYPE meaning exactly one thing,
+# so existing and future chip-specific branches are unaffected by this opt-in.
+SYSCFG_CHIP=$CHIP_TYPE
+if [ "$(fw_printenv -n sensor_dvp 2>/dev/null)" = "1" ]; then
+	YUV_TYPE0=1
+	# Only gk7202v300 needs to borrow another chip's tables. Its pinmux() branch
+	# is MIPI-only — it ignores g_cmos_yuv_flag entirely and always calls
+	# i2c0_for_mipi_sensor_pin_mux/vi_mipi_rx_mux — so there is no DVP path
+	# reachable for it at any flag value. gk7205v200 and gk7205v300 each have
+	# their own DVP path already; forcing a v300 onto the v200 VI pad table would
+	# be exactly this bug pointing the other way.
+	if [ "$CHIP_TYPE" = "gk7202v300" ]; then
+		SYSCFG_CHIP=gk7205v200
+	fi
+fi
+
+cd /lib/modules/$(uname -r)/goke/
+
+##################################################################
+
+# DDR start:0x40000000, kernel start:0x40000000,  OS(32M); MMZ start:0x42000000
+#
+# echo "${chipid}: ${mem_total}/${os_mem_size} | ${mem_start}/${mmz_start} | ${mmz_size}"
+
+# GK7202V300
+#
+# mem_total=64                  # 64M, total mem
+# mem_start=0x40000000          # phy mem start
+# os_mem_size=32                # 32M, os mem
+# mmz_start=0x42000000;         # mmz start addr
+# mmz_size=32M;                 # 32M, mmz size
+
+# GK7205V200
+#
+# mem_total=64                  # 64M, total mem
+# mem_start=0x40000000          # phy mem start
+# os_mem_size=32                # 32M, os mem
+# mmz_start=0x42000000;         # mmz start addr
+# mmz_size=32M;                 # 32M, mmz size
+
+# GK7205V300
+#
+# mem_total=128                 # 128M, total mem
+# mem_start=0x40000000          # phy mem start
+# os_mem_size=32                # 32M, os mem
+# mmz_start=0x42000000;         # mmz start addr
+# mmz_size=96M;                 # 96M, mmz size
+
+# GK7605V100
+#
+# mem_total=512                 # 512M, total mem
+# mem_start=0x40000000          # phy mem start
+# os_mem_size=32                # 32M, os mem
+# mmz_start=0x42000000;         # mmz start addr
+# mmz_size=480M;                # 480M, mmz size
+
+##################################################################
+
+report_error() {
+	echo "******* Error: There's something wrong, please check! *****"
+	exit 1
+}
+
+check_allocator() {
+	allocator=$(grep mmz_allocator /proc/cmdline)
+	if [ -z "${allocator}" ]; then
+		if [ ${mem_total} -ge 128 ]; then
+			set_allocator cma
+		else
+			set_allocator gk
+		fi
+	elif grep -q "mmz_allocator=cma" /proc/cmdline && \
+		[ -n "$(fw_printenv -n osmem 2>/dev/null)" ] && \
+		[ -n "$(fw_printenv -n totalmem 2>/dev/null)" ]; then
+		# bootargs carry the CMA zone the kernel reserves, and they are written
+		# once: set_allocator ran only while mmz_allocator was missing, so an
+		# osmem or totalmem changed afterwards never reached them. A 128 MB
+		# gk7205v300 booted on a 64 MB zone that way, beside an
+		# hi3516ev300 with the same osmem and the 96 MB it implies.
+		#
+		# Only with both values saved: set_allocator falls back to 64 MB of
+		# DDR without totalmem, and would take a 128 MB board's correct zone
+		# for a wrong one. And only to grow the zone -- a smaller one is said,
+		# never written, since a wrong guess there costs the camera its RAM.
+		booted=$(awk -F '=' '$1=="mmz"{print $2}' RS=" " /proc/cmdline)
+		wanted=$(set_allocator mmz)
+		if [ -n "${wanted}" ] && [ "${booted}" != "${wanted}" ]; then
+			have=$(echo "${booted}" | awk -F ',' '{print $4+0}')
+			want=$(echo "${wanted}" | awk -F ',' '{print $4+0}')
+			if [ "${want}" -gt "${have}" ]; then
+				echo "MMZ zone ${booted} does not follow totalmem/osmem (${wanted}); bootargs corrected, the zone follows at the next boot"
+				set_allocator cma >/dev/null
+			else
+				echo "MMZ zone ${booted} is larger than totalmem/osmem give (${wanted}); left as it is -- run set_allocator cma to apply it"
+			fi
+		fi
+	fi
+}
+
+insert_osal() {
+	check_allocator
+
+	MMZ=$(awk -F '=' '$1=="mmz"{print $2}' RS=" " /proc/cmdline)
+	if [ -z "$MMZ" ]; then
+		modprobe open_osal anony=1 mmz_allocator=gk mmz=anonymous,0,$mmz_start,$mmz_size || report_error
+	else
+		modprobe open_osal anony=1 mmz_allocator=cma mmz=$MMZ || report_error
+	fi
+}
+
+insert_detect() {
+	modprobe open_sys_config chip=$SYSCFG_CHIP sensors=unknown g_cmos_yuv_flag=$YUV_TYPE0 board=$BOARD
+	insert_osal
+	insmod gk7205v200_base.ko
+	modprobe open_isp
+	modprobe open_sensor_i2c
+	modprobe open_sensor_spi
+}
+
+remove_detect() {
+	rmmod -w open_sensor_spi
+	rmmod -w open_sensor_i2c
+	rmmod -w open_isp
+	rmmod -w open_base
+	rmmod -w open_osal >/dev/null 2>&1
+	rmmod -w open_sys_config
+}
+
+insert_audio() {
+	insmod gk7205v200_aio.ko
+	insmod gk7205v200_ai.ko
+	insmod gk7205v200_ao.ko
+	insmod gk7205v200_aenc.ko
+	insmod gk7205v200_adec.ko
+	insmod gk7205v200_acodec.ko
+	echo "insert audio"
+}
+
+remove_audio() {
+	rmmod -w open_acodec
+	rmmod -w open_adec
+	rmmod -w open_aenc
+	rmmod -w open_ao
+	rmmod -w open_ai
+	rmmod -w open_aio
+	echo "remove audio"
+}
+
+insert_isp() {
+	modprobe open_isp
+}
+
+insert_sil9024() {
+	i2c_sel=2
+	if [ "$CHIP_TYPE" == "gk7205v300" ]; then
+		i2c_sel=1
+	fi
+
+	if [ "$BOARD" == "sck" ]; then
+		insmod sil9024.ko norm=12 i2c_num=$i2c_sel #1080P@30fps
+	fi
+}
+
+insert_adv7179() {
+	i2c_sel=2
+	if [ "$CHIP_TYPE" == "gk7205v300" ]; then
+		i2c_sel=1
+	fi
+
+	if [ "$BOARD" == "sck" ]; then
+		insmod adv7179.ko norm_mode=0 i2c_num=$i2c_sel # norm_mode = 0:PAL, 1:NTSC
+	fi
+}
+
+insert_isp_piris() {
+	if [ "$CHIP_TYPE" == "gk7605v100" -a "$BOARD" == "demo" ]; then
+		modprobe open_piris
+	fi
+}
+
+insert_ko() {
+	if [ "$SENSOR" == "bt656" ] || [ "$SENSOR" == "jxf23_dc" ]; then
+		YUV_TYPE0=1
+	fi
+	modprobe open_sys_config chip=$SYSCFG_CHIP sensors=$SENSOR g_cmos_yuv_flag=$YUV_TYPE0 board=$BOARD
+	# open_sys_config takes MCLK only from its module parameters and defaults to
+	# 27 MHz at this chip=. A sensor init table tuned for 24 MHz (the GC2053
+	# ForCar tables are) then runs against the wrong clock. The ini's MCLK key is
+	# not consulted on this path, so the register is written directly.
+	# CRG PERI_CRG60 @ 0x120100F0 — sns0 clock select is bits [5:2] ONLY:
+	#   0x0:74.25  0x1:72  0x2:54  0x3:24  0x4:37.125  0x5:36  0x6:27  0x7:12 (MHz)
+	#
+	# Read-modify-write just that field, matching what the driver itself does
+	# (sensor_clock_config() is reg_write32(clock << 2, 0xF << 2, base+0xF0)).
+	# Storing the whole word would also clear bits [31:6] and set bit 0, which
+	# nothing in the driver ever does — it happens to select the right clock, but
+	# by accident of the constant rather than by writing the field.
+	#
+	# A wrong MCLK does not fail loudly: it yields a corrupted or absent image
+	# while every log line still looks healthy. Hence -s, so a failure reaches the
+	# console the way "SENSOR is not detected" does.
+	#
+	# ASYMMETRY, deliberate but worth knowing: sensor_dvp applies to insert_detect
+	# too, this does not. First-boot autodetect therefore probes at the sensor
+	# table's default clock. i2c is master-clocked so detection still works, but
+	# it will surprise someone eventually.
+	mclk="$(fw_printenv -n sensor_mclk 2>/dev/null)"
+	if [ -n "$mclk" ]; then
+		case "$mclk" in
+			74.25)  mclk_sel=0 ;;
+			72)     mclk_sel=1 ;;
+			54)     mclk_sel=2 ;;
+			24)     mclk_sel=3 ;;
+			37.125) mclk_sel=4 ;;
+			36)     mclk_sel=5 ;;
+			27)     mclk_sel=6 ;;
+			12)     mclk_sel=7 ;;
+			*)      mclk_sel="" ;;
+		esac
+		if [ -z "$mclk_sel" ]; then
+			logger -s -p daemon.err -t goke "sensor_mclk=$mclk is not a supported MCLK (74.25/72/54/24/37.125/36/27/12); leaving the sensor table default"
+		elif ! command -v devmem >/dev/null 2>&1; then
+			logger -s -p daemon.err -t goke "sensor_mclk=$mclk requested but devmem is missing; leaving the sensor table default"
+		else
+			mclk_cur="$(devmem 0x120100F0)"
+			if [ -z "$mclk_cur" ]; then
+				logger -s -p daemon.err -t goke "sensor_mclk=$mclk: could not read PERI_CRG60; leaving the sensor table default"
+			elif ! devmem 0x120100F0 32 $(( (mclk_cur & ~0x3C) | (mclk_sel << 2) )); then
+				logger -s -p daemon.err -t goke "sensor_mclk=$mclk: MCLK write failed; sensor may not produce a usable image"
+			fi
+		fi
+	fi
+	insert_osal
+	insmod gk7205v200_base.ko
+	insmod gk7205v200_sys.ko
+	# insmod gk7205v200_tde.ko
+	insmod gk7205v200_rgn.ko
+	insmod gk7205v200_vgs.ko max_vgs_job=20 max_vgs_node=20 max_vgs_task=20
+	insmod gk7205v200_vi.ko
+	insert_isp
+	insmod gk7205v200_vpss.ko
+	# insmod gk7205v200_vo.ko                       # unused on OpenIPC
+	# insmod gfbg.ko video="gfbg:vram0_size:1620"   # unused on OpenIPC  # default fb0:D1
+	insmod gk7205v200_chnl.ko
+	insmod gk7205v200_vedu.ko
+	insmod gk7205v200_rc.ko
+	insmod gk7205v200_venc.ko VencMaxChnNum=3
+	insmod gk7205v200_h264e.ko
+	insmod gk7205v200_h265e.ko
+	insmod gk7205v200_jpege.ko
+	insmod gk7205v200_ive.ko save_power=0
+	modprobe open_pwm
+	modprobe open_sensor_i2c
+	modprobe open_sensor_spi
+	# insert_isp_piris                              # unused on OpenIPC
+	# insert_sil9024;                               # unused on OpenIPC  # BT1120
+	insert_audio
+	modprobe open_mipi_rx
+	# insmod gk7205v200_pm.ko                       # unused on OpenIPC
+	modprobe open_wdt
+
+	# Cipher engine -> /dev/cipher. majestic's native WebRTC takes AES-CTR
+	# for its SRTP transform from here, a burst of packets per ioctl: on a
+	# gk7205v200 with one viewer at 4 Mbit/s that is 20.0% of a core in
+	# software against 15.9% through the engine, and at 50 Mbit/s it is the
+	# difference between holding the configured bitrate at 20 fps and
+	# managing 40 Mbit/s at 11. See docs/hisi/cipher-engine.md in majestic.
+	#
+	# WORTH LOADING ONLY WITH A DRIVER THAT BATCHES. Driven one packet at a
+	# time the same engine saves nothing measurable — the ioctl, the DMA
+	# allocation and the sleep cost about what the AES does — so this line
+	# is paired with the openhisilicon bump that carries the batched
+	# command, not with the one that first built the module.
+	#
+	# Last, and after insert_osal: modprobe would otherwise pull osal in as
+	# a dependency at whatever point this ran, ahead of insert_osal's own
+	# arguments. Failure is not an error -- an image built before that
+	# openhisilicon bump simply has no module to find, and that must not
+	# abort sensor bring-up. Same shape as load_hisilicon's.
+	# `|| true` because this is the LAST statement of insert_ko, which is in
+	# turn the last statement of the script, so its status becomes the exit
+	# status S70vendor reports. Without it an image whose openhisilicon
+	# predates the module loads every driver correctly and still reports
+	# "Loading vendor modules..." as a failure.
+	modprobe open_cipher 2>/dev/null || true
+}
+
+remove_ko() {
+	# Module names in the kernel are open_* (set by openhisilicon's wrapper
+	# via PREFIX=open_ in kernel/Kbuild) regardless of the .ko filename on
+	# disk being gk7205v200_*.ko (renamed at install time by hisilicon-opensdk
+	# to satisfy load_goke's insmod-by-filename pattern). insmod uses the
+	# filename, but rmmod takes the in-kernel module name — so this list
+	# must be open_* to match what `lsmod` actually shows.
+	rmmod -w open_cipher 2>/dev/null
+	rmmod -w open_wdt
+	# rmmod -w open_pm                                 # unused on OpenIPC
+	remove_audio
+	rmmod -w open_mipi_rx
+	# rmmod -w open_piris                              # unused on OpenIPC
+	# rmmod -w sil9024 &> /dev/null                    # unused on OpenIPC
+	rmmod -w open_ive
+	rmmod -w open_rc
+	rmmod -w open_jpege
+	rmmod -w open_h264e
+	rmmod -w open_h265e
+	rmmod -w open_venc
+	rmmod -w open_vedu
+	rmmod -w open_chnl
+	# rmmod -w gfbg                                    # unused on OpenIPC
+	# rmmod -w open_vo                                 # unused on OpenIPC
+	rmmod -w open_vpss
+	rmmod -w open_isp
+	rmmod -w open_vi
+	rmmod -w open_vgs
+	rmmod -w open_rgn
+	# rmmod -w open_tde
+	rmmod -w open_sensor_i2c &>/dev/null
+	rmmod -w open_sensor_spi &>/dev/null
+	rmmod -w open_pwm
+	rmmod -w open_sys
+	rmmod -w open_base
+	rmmod -w open_osal
+	rmmod -w open_sys_config
+}
+
+load_usage() {
+	echo "Usage:  ./load_goke [-option] [sensor_name]"
+	echo "options:"
+	echo "    -i                       insert modules"
+	echo "    -r                       remove modules"
+	echo "    -a                       remove modules first, then insert modules"
+	echo "    -sensor sensor_name      config sensor type [default: imx307]"
+	echo "    -h                       help information"
+	echo -e "Available sensors: gc2053 imx307 imx327 imx335 os05a sc2231 sc3235 sc4236  etc."
+	echo -e "for example: ./load_goke -i -sensor imx307 -osmem 32M -board demo -yuv0 0\n"
+}
+
+calc_mmz_info() {
+	mmz_start=$(echo "$mem_start $os_mem_size" |
+		awk 'BEGIN { temp = 0; }
+        {
+                temp = $1/1024/1024 + $2;
+        }
+        END { printf("0x%x00000\n", temp); }')
+
+	mmz_size=$(echo "$mem_total $os_mem_size" |
+		awk 'BEGIN { temp = 0; }
+        {
+                temp = $1 - $2;
+        }
+        END { printf("%dM\n", temp); }')
+	echo "mmz_start: $mmz_start, mmz_size: $mmz_size"
+}
+
+######################parse arg###################################
+b_arg_sensor0=0
+b_arg_sensor1=0
+b_arg_yuv_type0=0
+b_arg_insmod=0
+b_arg_remove=0
+b_arg_os_mem=0
+b_arg_board=0
+
+for arg in $@; do
+	if [ $b_arg_sensor0 -eq 1 ]; then
+		b_arg_sensor0=0
+		SENSOR=$arg
+	fi
+
+	if [ $b_arg_os_mem -eq 1 ]; then
+		b_arg_os_mem=0
+		os_mem_size=$arg
+
+		if [ -z $os_mem_size ]; then
+			echo "[error] os_mem_size is null"
+			exit
+		fi
+	fi
+
+	if [ $b_arg_yuv_type0 -eq 1 ]; then
+		b_arg_yuv_type0=0
+		YUV_TYPE0=$arg
+	fi
+
+	if [ $b_arg_board -eq 1 ]; then
+		b_arg_board=0
+		BOARD=$arg
+	fi
+
+	case $arg in
+	"-i")
+		b_arg_insmod=1
+		;;
+	"-r")
+		b_arg_remove=1
+		;;
+	"-a")
+		b_arg_insmod=1
+		b_arg_remove=1
+		;;
+	"-h")
+		load_usage
+		;;
+	"-sensor0")
+		b_arg_sensor0=1
+		;;
+	"-sensor")
+		b_arg_sensor0=1
+		;;
+	"-osmem")
+		b_arg_os_mem=1
+		;;
+	"-yuv0")
+		b_arg_yuv_type0=1
+		;;
+	"-board")
+		b_arg_board=1
+		;;
+	esac
+done
+#######################parse arg end########################
+
+# HWRNG: load before any conditional exit (os_mem mismatch, sensor
+# probe failure, etc.) so entropy is always available to userspace
+# daemons (majestic, dropbear, openssl) that block on getrandom().
+if [ "$b_arg_insmod" = "1" ]; then
+    modprobe open_hwrng 2>/dev/null
+fi
+
+if [ $os_mem_size -ge $mem_total ]; then
+	echo "[err] os_mem[$os_mem_size], over total_mem[$mem_total]"
+	exit
+fi
+
+calc_mmz_info
+
+#######################Action###############################
+
+if [ $# -lt 1 ]; then
+	load_usage
+	exit 0
+fi
+
+if [ $b_arg_insmod -eq 1 ]; then
+	# A failed probe used to be stored as sensor=unknown, and rcS exports the
+	# stored value into SENSOR before this ever runs -- so an already-latched
+	# camera arrives here with SENSOR=unknown, takes the "set manually" branch
+	# below, and never probes again however the real fault is fixed. Treat it
+	# as unset and drop it from the environment so this boot re-detects. #2428.
+	if [ "$SENSOR" = "unknown" ]; then
+		SENSOR=
+		fw_setenv sensor
+	fi
+
+	if [ -n "$SENSOR" ]; then
+		logger -s -p daemon.info -t goke "SENSOR: ${SENSOR}"
+	else
+		if fw_printenv -n sensor >/dev/null; then
+			export SENSOR=$(fw_printenv -n sensor)
+			logger -s -p daemon.info -t goke "Get data from U-Boot ENV and set SENSOR as ${SENSOR}"
+		else
+			insert_detect
+			SENSOR_DETECT=$(ipcinfo --short-sensor)
+			export SENSOR=${SENSOR_DETECT:=unknown}
+			remove_detect
+			logger -s -p daemon.info -t goke "Get data from ipcinfo and set SENSOR as ${SENSOR}"
+			# Do not persist a failed detection. The fw_printenv branch above wins
+			# whenever `sensor` exists, so writing "unknown" here latches the camera
+			# into "SENSOR is not detected, aborting..." for good -- detection never
+			# runs again and nothing says why. Seen on a GK7202V500 in #2428.
+			# load_ingenic has always cleared the variable instead of storing the
+			# miss; this is the same behaviour, reached by not writing at all.
+			if [ "$SENSOR" != "unknown" ]; then
+				fw_setenv sensor $SENSOR && logger -s -p daemon.info -t goke "Writing ${SENSOR} to U-Boot ENV"
+			fi
+		fi
+	fi
+fi
+
+if [ $b_arg_remove -eq 1 ]; then
+	remove_ko
+fi
+
+if [ "$SENSOR" = "unknown" ]; then
+	logger -s -p daemon.err -t goke "SENSOR is not detected, aborting..."
+	exit 1
+else
+	if [ $b_arg_insmod -eq 1 ]; then
+		insert_ko
+	fi
+fi

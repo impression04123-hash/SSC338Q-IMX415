@@ -1,0 +1,12 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index ce39de94..0f229024 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -544,7 +544,6 @@ else()
+         epoll_create
+         epoll_create1
+         epoll_ctl
+-        epoll_pwait2
+         eventfd
+         fcntl
+         getegid

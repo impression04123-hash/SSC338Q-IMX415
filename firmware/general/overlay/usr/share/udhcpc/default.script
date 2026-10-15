@@ -1,0 +1,226 @@
+#!/bin/sh
+
+# udhcpc script edited by Tim Riker <Tim@Rikers.org>
+
+# Changes by OpenIPC 2021
+#
+# - move resolv.conf path to /tmp
+# - remove interface notes from resolv.conf
+
+
+[ -z "$1" ] && echo "Error: should be called from udhcpc" && exit 1
+
+RESOLV_CONF="/tmp/resolv.conf"
+[ -e $RESOLV_CONF ] || touch $RESOLV_CONF
+[ -n "$broadcast" ] && BROADCAST="broadcast $broadcast"
+[ -n "$subnet" ] && NETMASK="netmask $subnet"
+# Handle stateful DHCPv6 like DHCPv4
+[ -n "$ipv6" ] && ip="$ipv6/128"
+
+[ -z "${IF_WAIT_DELAY}" ] && IF_WAIT_DELAY=10
+
+# Written by S40network in dual mode: eth0's address when no DHCP server
+# answers on the cable, the wired rescue address it always had.
+FALLBACK=/var/run/network.fallback
+
+# Route metric: in dual mode -- a cable and a configured WiFi, both up, the
+# cable preferred -- wlan0's routes rank behind everyone else's. Only there:
+# netmode=wifi and the modem layout park eth0 on a static fallback address
+# whose connected route is metric 0, so a wlan0 demoted beside it would lose
+# its own subnet to a dead port whenever the WiFi network used that subnet.
+# Outside dual mode every interface keeps metric 0 and the exact routes it
+# always had. A `metric N` line in the interface's stanza overrides this:
+# ifupdown exports stanza options to udhcpc's environment as IF_<NAME>.
+metric=0
+case "$interface" in wlan*) [ -s "$FALLBACK" ] && metric=10 ;; esac
+case "$IF_METRIC" in '' | *[!0-9]*) ;; *) metric=$IF_METRIC ;; esac
+
+# The kernel adds an interface's connected route at metric 0 whatever the
+# default route's metric is, so a wlan0 on the same subnet as eth0 would still
+# take the on-link traffic. Re-add this address's prefix route at the
+# interface's metric. Quoted and line by line: an interface can carry more
+# than one route, and a renew finds the one already rewritten.
+prefix_metric() {
+	[ "$metric" -gt 0 ] || return 0
+	ip -4 route show dev "$interface" | while read -r dst rest; do
+		case "$dst" in default | *[!0-9./]*) continue ;; esac
+		case " $rest " in *" via "* | *" metric "*) continue ;; esac
+		case " $rest " in *" src $1 "*) ;; *) continue ;; esac
+		ip route del "$dst" dev "$interface" proto kernel 2>/dev/null || continue
+		ip route add "$dst" dev "$interface" proto kernel scope link src "$1" metric "$metric"
+	done
+}
+
+# One resolv.conf for every interface that has a lease. Each writes its own
+# fragment, named by its metric so the preferred interface's servers come
+# first, and the file is rebuilt from all of them: the last interface to bind
+# used to overwrite the rest, so a WiFi renew took the DNS away from the cable
+# it was routing through. musl asks the first three servers at once, so the
+# ones further down still answer. The first search line wins.
+RESOLV_D=/tmp/resolv.d
+resolv_update() {
+	action=$1
+	mkdir -p "$RESOLV_D"
+	(
+		flock 9
+		set -- "$RESOLV_D"/*."$interface"
+		# A deconfig with no fragment of its own leaves the file as it was,
+		# as this script always has.
+		[ "$action" = del ] && [ ! -e "$1" ] && exit 0
+		rm -f "$@"
+		if [ "$action" = add ]; then
+			frag="$RESOLV_D/$(printf %05d "$metric").$interface"
+			{
+				[ -n "$search_list" ] && echo "search $search_list"
+				for i in $dns; do
+					echo "nameserver $i"
+				done
+			} > "$frag"
+		fi
+		set -- "$RESOLV_D"/[0-9]*.*
+		[ -e "$1" ] || set -- /dev/null
+		awk '/^search / { if (!s++) print; next }
+			/^nameserver / { if (!seen[$2]++) ns[++n] = $0 }
+			END { for (i = 1; i <= n; i++) print ns[i] }' "$@" > "$RESOLV_CONF.$$" &&
+			mv -f "$RESOLV_CONF.$$" "$RESOLV_CONF"
+	) 9> "$RESOLV_D/.lock"
+}
+
+wait_for_ipv6_default_route() {
+	printf "Waiting for IPv6 default route to appear"
+	while [ $IF_WAIT_DELAY -gt 0 ]; do
+		if ip -6 route list | grep -q default; then
+			printf "\n"
+			return
+		fi
+		sleep 1
+		printf "."
+		: $((IF_WAIT_DELAY -= 1))
+	done
+	printf " timeout!\n"
+}
+
+case "$1" in
+	deconfig)
+		/sbin/ifconfig $interface up
+		/sbin/ifconfig $interface 0.0.0.0
+
+		# A released lease takes its servers with it. musl reads only the
+		# first three nameservers and the cable's sort first, so left in
+		# place after the cable is pulled they would fill those slots with
+		# servers that can no longer answer and leave the WiFi's unread.
+		resolv_update del
+
+		if [ -x /usr/sbin/avahi-autoipd ]; then
+			/usr/sbin/avahi-autoipd -c $interface && /usr/sbin/avahi-autoipd -k $interface
+		fi
+		;;
+
+	leasefail|nak)
+		if [ -x /usr/sbin/avahi-autoipd ]; then
+			/usr/sbin/avahi-autoipd -c $interface || /usr/sbin/avahi-autoipd -wD $interface --no-chroot
+		fi
+		# In dual mode eth0 falls back to the address S40network gives it, and
+		# only with a cable in: `ipaddr` (192.168.1.10) is the WiFi network's
+		# usual subnet, and on a dead port it would take that subnet away
+		# from wlan0.
+		if [ "$interface" = eth0 ] && [ -s "$FALLBACK" ]; then
+			carrier=0
+			read -r carrier 2>/dev/null < /sys/class/net/eth0/carrier
+			if [ "$carrier" = 1 ]; then
+				/sbin/ifconfig eth0 "$(cat "$FALLBACK")" up
+			else
+				/sbin/ifconfig eth0 0.0.0.0
+			fi
+		else
+			addr=$(fw_printenv -n ipaddr || echo -n 192.168.1.10)
+			/sbin/ifconfig $interface $addr netmask $(fw_printenv -n netmask || echo -n 255.255.255.0) up
+			prefix_metric "$addr"
+		fi
+		;;
+
+	renew|bound)
+		if [ -x /usr/sbin/avahi-autoipd ]; then
+			/usr/sbin/avahi-autoipd -c $interface && /usr/sbin/avahi-autoipd -k $interface
+		fi
+		/sbin/ifconfig $interface $ip $BROADCAST $NETMASK
+		prefix_metric "$ip"
+		if [ -n "$ipv6" ] ; then
+			wait_for_ipv6_default_route
+		fi
+
+		if [ -n "$router" ] ; then
+			echo "deleting routers"
+			while route del default gw 0.0.0.0 dev $interface 2> /dev/null; do
+				:
+			done
+
+			for i in $router ; do
+				if [ "$metric" -gt 0 ]; then
+					route add default gw $i dev $interface metric $metric
+				else
+					route add default gw $i dev $interface
+				fi
+			done
+		fi
+
+		# prefer rfc3397 domain search list (option 119) if available
+		if [ -n "$search" ]; then
+			search_list=$search
+		elif [ -n "$domain" ]; then
+			search_list=$domain
+		fi
+
+		for i in $dns ; do
+			echo adding dns $i
+		done
+		resolv_update add
+
+		# Step the clock now that there is a route, but never let NTP
+		# hold the boot open. This script runs inside udhcpc, which runs
+		# inside ifup in S40network, so everything after it in rcS -
+		# S49ntpd, dropbear, crond, majestic - waits here: until this
+		# returns the camera has no ssh and no video.
+		#
+		# ntpd -q looks self-limiting and is not. Its alarm(10), re-armed
+		# to alarm(50) once any revents land on a peer socket, covers only
+		# the polling. Name resolution is not covered: add_peers() ->
+		# resolve_peer_hostname() -> getaddrinfo() runs before that alarm
+		# is ever set, and the poll loop re-resolves later on the same
+		# terms. ntp.conf ships four pool.ntp.org names, so a DNS server
+		# that answers slowly or not at all blocks the boot with no bound
+		# on it whatsoever. On an hi3516ev300 with the nameserver
+		# blackholed this line took 41 s: ~31 s resolving the four names
+		# before the alarm exists, then the 10 s the alarm does cover.
+		# openhisilicon CI on a cv500 saw 79 s and was still blocked when
+		# the emulator was killed, init never reaching S49ntpd.
+		#
+		# -k is the part that matters. Plain `timeout 10` sends TERM and
+		# waits, which is no bound against a process wedged in a resolver;
+		# -k escalates to KILL. Same ev300, same blackholed nameserver:
+		# 41 s becomes 10 s. Against a child that ignores TERM outright,
+		# 12 s and rc 137 (KILL); against one that does not, 10 s and
+		# rc 143.
+		#
+		# A reachable server is untouched - -q exits on its own once it
+		# has stepped the clock, measured at 2 s on that ev300, so the cap
+		# is never reached. When nothing answers, S49ntpd's daemon starts
+		# seconds later and keeps trying, so what a capped query costs is
+		# clock accuracy at boot, not the clock.
+		#
+		# CONFIG_TIMEOUT=y in busybox.config, the busybox this overlay
+		# ships beside; busybox-initramfs.config lacks the applet but
+		# builds no rootfs carrying this script, so the `command -v
+		# timeout` fallback sysupgrade's mount_rootfs needs is not needed
+		# here.
+		timeout -k 2 10 ntpd -q -N -n
+		;;
+esac
+
+HOOK_DIR="$0.d"
+for hook in "${HOOK_DIR}/"*; do
+	[ -f "${hook}" -a -x "${hook}" ] || continue
+	"${hook}" "${@}"
+done
+
+exit 0

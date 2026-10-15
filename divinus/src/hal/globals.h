@@ -1,0 +1,23 @@
+#pragma once
+
+#include "types.h"
+
+#ifndef GIT_REV
+#define GIT_REV "unknown"
+#endif
+
+extern volatile char graceful, keepRunning;
+extern char audioOn;
+
+extern void *aud_thread;
+extern void *isp_thread;
+extern void *vid_thread;
+
+extern char chnCount;
+extern hal_chnstate *chnState;
+
+extern char chip[16];
+extern char family[32];
+extern hal_platform plat;
+extern char sensor[16];
+extern int series;

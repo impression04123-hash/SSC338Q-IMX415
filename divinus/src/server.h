@@ -1,0 +1,43 @@
+#pragma once
+
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <pthread.h>
+#include <poll.h>
+#include <regex.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <unistd.h>
+
+#include "app_config.h"
+#include "fmt/mp4.h"
+#include "fmt/nal.h"
+#include "hal/globals.h"
+#include "hal/tools.h"
+#include "hal/types.h"
+#include "jpeg.h"
+#include "media.h"
+#include "network.h"
+#include "night.h"
+#include "record.h"
+#include "region.h"
+#include "watchdog.h"
+
+int server_start();
+int server_stop();
+
+void send_jpeg_to_client(char index, char *buf, ssize_t size);
+void send_mjpeg_to_client(char index, char *buf, ssize_t size);
+void send_h26x_to_client(char index, hal_vidstream *stream);
+void send_mp3_to_client(char *buf, ssize_t size);
+char any_http_audio(void);
+void send_mp4_to_client(char index, hal_vidstream *stream, char isH265);
+void send_pcm_to_client(hal_audframe *frame);

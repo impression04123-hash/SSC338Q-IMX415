@@ -1,0 +1,154 @@
+#include "app_config.h"
+#include "hal/macros.h"
+#include "http_post.h"
+#include "media.h"
+#include "network.h"
+#include "night.h"
+#include "rtsp/rtsp_server.h"
+#include "server.h"
+#include "watchdog.h"
+
+#include <getopt.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+rtsp_handle rtspHandle;
+volatile char graceful = 0, keepRunning = 1;
+
+void handle_error(int signo) {
+    char msg[64];
+    sprintf(msg, "Error occured (%d)! Quitting...\n", signo);
+    write(STDERR_FILENO, msg, strlen(msg));
+    keepRunning = 0;
+    /* _exit(), not exit(): from a signal handler only async-signal-safe
+       calls are allowed, and skipping the atexit handlers leaves the
+       watchdog armed so a crash still ends in a reset */
+    _exit(EXIT_FAILURE);
+}
+
+void handle_exit(int signo) {
+    write(STDERR_FILENO, "Graceful shutdown...\n", 21);
+    keepRunning = 0;
+    graceful = (signo == SIGHUP);
+}
+
+int main(int argc, char *argv[]) {
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = handle_error;
+        sigaction(SIGABRT, &sa, NULL);
+        sigaction(SIGBUS, &sa, NULL);
+        sigaction(SIGFPE, &sa, NULL);
+        sigaction(SIGILL, &sa, NULL);
+        sigaction(SIGSEGV, &sa, NULL);
+
+        sa.sa_handler = handle_exit;
+        sigaction(SIGHUP, &sa, NULL);
+        sigaction(SIGINT, &sa, NULL);
+        sigaction(SIGQUIT, &sa, NULL);
+        sigaction(SIGTERM, &sa, NULL);
+
+        sa.sa_handler = SIG_IGN;
+        sigaction(SIGPIPE, &sa, NULL);
+    }
+
+    hal_identify();
+
+    if (!*family)
+        HAL_ERROR("hal", "Unsupported chip family! Quitting...\n");
+
+    fprintf(stderr, "\033[0m\033[7m Divinus (rev %s) for %s \033[0m\n", GIT_REV, family);
+    fprintf(stderr, "Chip ID: %s\n", chip);
+
+    if (app_config_parse() != CONFIG_OK)
+        HAL_ERROR("hal", "Can't load app config 'divinus.yaml'\n");
+
+    if (app_config.watchdog)
+        watchdog_start(app_config.watchdog);
+
+    network_start();
+
+    server_start();
+
+    if (app_config.rtsp_enable) {
+        rtspHandle = rtsp_create(RTSP_MAXIMUM_CONNECTIONS, app_config.rtsp_port, 1);
+        rtsp_latch_audio_codec();
+        HAL_INFO("rtsp", "Started listening for clients...\n");
+        if (app_config.rtsp_enable_auth) {
+            if (EMPTY(app_config.rtsp_auth_user) || EMPTY(app_config.rtsp_auth_pass))
+                HAL_ERROR("rtsp", "One or both credential fields have been left empty!\n");
+            else {
+                rtsp_configure_auth(rtspHandle, app_config.rtsp_auth_user, app_config.rtsp_auth_pass);
+                HAL_INFO("rtsp", "Authentication enabled!\n");
+            }
+        }
+    }
+
+    if (app_config.stream_enable)
+        media_start();
+
+    if (sdk_start())
+        HAL_ERROR("hal", "Failed to start SDK!\n");
+
+    if (app_config.night_mode_enable)
+        night_enable();
+
+    if (app_config.http_post_enable)
+        http_post_start();
+
+    if (app_config.osd_enable)
+        region_start();
+
+    if (app_config.record_enable && app_config.record_continuous)
+        record_start();
+
+    while (keepRunning) {
+        if (app_config.rtsp_enable) rtsp_tick(rtspHandle);
+        watchdog_reset();
+        sleep(1);
+    }
+
+    if (app_config.record_enable && app_config.record_continuous)
+        record_stop();
+
+    if (app_config.http_post_enable)
+        http_post_stop();
+
+    if (app_config.osd_enable)
+        region_stop();
+
+    if (app_config.night_mode_enable)
+        night_disable();
+
+    sdk_stop();
+
+    if (app_config.stream_enable)
+        media_stop();
+
+    if (app_config.rtsp_enable) {
+        rtsp_finish(rtspHandle);
+        HAL_INFO("rtsp", "Server has closed!\n");
+    }
+
+    server_stop();
+
+    network_stop();
+
+    if (app_config.watchdog)
+        watchdog_stop();
+
+    if (!graceful)
+        app_config_restore();
+
+    if (graceful) {
+        fprintf(stderr, "Restarting...\n");
+        execvp(argv[0], argv);
+    }
+
+    fprintf(stderr, "Main thread is shutting down...\n");
+    return EXIT_SUCCESS;
+}
