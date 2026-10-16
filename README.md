@@ -1,6 +1,6 @@
 # SSC338Q + IMX415 无人机数字图传
 
-面向 SSC338Q + IMX415 空中端、NBD8010S-KL-V2 地面端及 RTL8812EU 无线模块的软件开发资料与源码快照。
+面向 SSC338Q + IMX415 空中端、NBD8010S-KL-V2 地面端及 RTL8812EU 无线模块的软件工程、学习资料与源码快照。
 
 ## 视频链路
 
@@ -12,6 +12,8 @@ IMX415 → SSC338Q 采集与 H.265 编码 → RTP/UDP → WFB-ng → RTL8812EU �
 
 | 目录 | 内容 |
 |---|---|
+| [Project](Project/) | 可构建的双端 H.265/WFB-ng 工程、SDK参考后端、配置与测试 |
+| [学习手册](学习手册/) | 项目总体学习手册，提供 Markdown 与 PDF |
 | [research](research/) | SigmaStar 采集编码、RTP 和海思地面解码/HDMI 参考实现 |
 | [wfb-ng](wfb-ng/) | 无线收发、FEC、加密认证和链路统计 |
 | [msposd](msposd/) | UART、MSP DisplayPort、OSD 与 SITL/回放说明 |
@@ -32,3 +34,21 @@ IMX415 → SSC338Q 采集与 H.265 编码 → RTP/UDP → WFB-ng → RTL8812EU �
 - UART/MSP DisplayPort 协议与 OSD 叠加。
 - 有线旁路、码流回放、链路抓包、SITL 测试和端到端延迟测量。
 
+## 可构建工程与验证
+
+从 [Project/README.md](Project/README.md) 开始；目标运行程序使用 C11/POSIX，包含空中采集编码、H.265 RTP、WFB-ng服务编排、UART/MSP DisplayPort OSD、地面硬解/HDMI和进程监督。
+
+在 Linux/WSL 中，从仓库根目录运行：
+
+```sh
+cd Project
+bash scripts/build_host.sh
+```
+
+已完成的主机验证为 CTest 12/12、ASan/UBSan 12/12、root 运行监督 13/13。UDP、UNIX和WFB开发模拟空口三条路径各35帧H.265，解码帧MD5一致；WFB实际丢片FEC恢复及错误密钥拒绝测试通过。条件、日志位置与未验证事项见 [测试报告](Project/docs/TEST_REPORT.md)。ARM交叉链接及实际传感器、无线和HDMI仍需上板验证。
+
+工程按普通文件目录收录，未嵌入第二个Git仓库，构建产物、测试日志和私钥不随源码上传。
+
+## 地面板卡与 SDK
+
+NBD8010S-KL-V2 的产品规格标注 Hi3536E；本工程使用 OpenIPC `hi3536dv100` 参考平台组件，需核对实际芯片修订、固件和SDK ABI。MPP/BSP与雄迈客户端NetSDK用途不同，详细来源、获取入口和向供应方索取的清单见 [SDK选型说明](Project/docs/SDK_SELECTION.md)。

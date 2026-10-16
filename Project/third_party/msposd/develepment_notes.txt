@@ -1,0 +1,76 @@
+# to compile for desktop
+sudo apt-get update
+sudo apt-get install libevent-dev
+make
+sudo apt-get install gdb
+
+# on desktop test, enable USB to serial
+sudo systemctl stop brltty
+sudo systemctl disable --now brltty brltty-udev
+sudo systemctl mask brltty brltty-udev
+
+sudo chmod 666 /dev/ttyUSB3
+msposd --channels 7 --master /dev/ttyUSB0 --baudrate 115200 --out 127.0.0.1:14550  -a 9 -f /tmp -t --osd
+
+#msp needs two-way communication
+
+make osd-x86 VERBOSE=1
+
+./build.sh star6e
+./build.sh native 
+
+cc msposd.c -I ./include -L/usr/lib/x86_64-linux-gnu/  -lcsfml-graphics -lcsfml-window -lcsfml-system -O1 -g -fsanitize=address -fno-omit-frame-pointer -Wall -Wextra -D_x86 -g -fsanitize=address -levent_core -o msposd
+
+#copy on cam
+
+scp -O ./msposd_star6e root@192.168.1.88:/usr/bin/msposd
+
+on the camera
+msposd --channels 7 --master /dev/ttyS2 --baudrate 115200  --osd --matrix 11 --ahi 3 -r 30
+
+#show text
+echo "Custom Message... &L04 &F22 CPU:&C &B temp:&T" >/tmp/MSPOSD.msg
+echo "Custom Message... &L03 &F28 CPU:&C &B temp:&T" >./MSPOSD.msg
+echo "40fps/MCS3/15Mb imx415_tipo.bin qpDelta:-6 &L05 &F22 CPU:&C &B temp:&T &p" >./MSPOSD.msg
+
+#test
+echo "1586 packets dropped" > ./wfb.log
+
+#betaflight fonts download
+curl -L -o /usr/bin/font.png https://raw.githubusercontent.com/openipc/msposd/main/fonts/betaflight/font.png
+curl -L -o /usr/bin/font_hd.png https://raw.githubusercontent.com/openipc/msposd/main/fonts/betaflight/font_hd.png
+
+--matrix 11 
+will enable second font size - small font for FHD mode.
+Will Line 1,2, 10,11, 19,20 will be Large font, the rest will be small, and aligned to the adjacent corner.
+
+--ahi 3
+Enhanced AHI ladder, home indicator on the main AHI line
+--on PC read serial
+msposd --channels 7 --master /dev/ttyUSB0 --baudrate 115200  --osd --matrix 11 --ahi 3 -r 30 -v
+
+--on PC read serial and forward to test air no OSD mode
+msposd_x86 --channels 7 --master /dev/ttyUSB0 --baudrate 115200  --out 127.0.0.1:14550  --matrix 11 --ahi 3 -r 50 -v
+ 
+
+--on CAM read serial and forward via mavlink port
+msposd --channels 7 --master /dev/ttyS2 --baudrate 115200 --out 127.0.0.1:14550 --matrix 11 --ahi 3 -r 30
+
+--on PC render  
+/home/home/src/msposd/msposd --master 127.0.0.1:14550 --osd -r 50 --ahi 3 --matrix 11 -v
+
+-- obsolete, copy binaries to release folser
+./build.sh x86
+cp ./msposd_x86 ./release/x86/msposd
+cp ./msposd_star6e ./release/star6e/msposd
+cp ./msposd_goke ./release/goke/msposd
+cp ./msposd_hisi ./release/hisi/msposd
+
+-- Test different color and size per line
+echo -e "LINE1 Purple font 24 &L52 &F24\nLINE2 Red font size 20 &L32 &F20 \nLine3 bluish size 28 &L42 &F28 " > ./MSPOSD.msg
+echo -e "&G8 0 - White   &L02&F28\n 1 - Black   &L12\n 2 - Red     &L22\n 3 - Green   &L32\n 4 - Blue    &L42\n 5 - Yellow  &L52\n 6 - Magenta &L62\n 7 - Cyan  &L72\n 8 - Orchid  &L82\n 9 - DarkRed &L92" > /tmp/MSPOSD.msg
+
+connect to INAV_SITL msp display port on COM4
+socat PTY,link=/tmp/inav_pty,raw,echo=0 TCP:127.0.0.1:5763
+./msposd -m /tmp/inav_pty -d -r 1030 --ahi 4 --matrix 11 -v
+

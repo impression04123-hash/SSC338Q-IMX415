@@ -1,0 +1,12 @@
+build*/
+dist/
+*.log
+*.pid
+*.pcap
+*.key
+received*.h265
+samples/*.h265
+.superpowers/
+__pycache__/
+.pytest_cache/
+work/

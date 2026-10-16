@@ -1,0 +1,32 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "gcc build",
+            "type": "shell",
+            "command": "./build.sh native",
+            "args": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Build project using Makefile"
+        },        
+        {
+            "label": "copy msposd",
+            "type": "shell",
+            "command": "cp",
+            "args": [
+                "-f",
+                "${workspaceFolder}/msposd",
+                "${workspaceFolder}/msposd_x"
+            ],
+            "problemMatcher": [],
+            "detail": "Copy msposd to workspace folder",
+            "dependsOn": "gcc build"
+        }
+    ]
+}

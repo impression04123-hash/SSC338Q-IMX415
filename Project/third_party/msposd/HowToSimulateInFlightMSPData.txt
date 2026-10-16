@@ -1,0 +1,36 @@
+Simulate real flight with INAV
+On Linux.
+Start inav_configurator, on SITL tab, setup without any external software, no RC COM.
+Start it, then connect to it, configure with the plane config, then make all sensors to FAKE:
+in CLI:
+feature GPS
+feature VBAT
+
+set acc_hardware = FAKE
+set baro_hardware = FAKE
+set gps_provider = FAKE
+set vbat_meter_type = FAKE
+set current_meter_type = FAKE
+set mag_hardware = NONE
+set receiver_type = MSP
+set rssi_source = MSP
+set init_gyro_cal = OFF
+set failsafe_stick_threshold = 0
+
+save
+
+stop inav_SITL and start in simulator mode:
+./src/inav-conf/inav-configurator/resources/public/sitl/linux/inav_SITL \
+  --path="/home/home/.config/INAV Configurator/msposd.bin" \
+  --sim xp \
+  --simip 192.168.1.66
+
+Assuming MSP DisplayPort is setup on COM4. To map it, run:  
+socat PTY,link=/tmp/inav_pty,raw,echo=0 TCP:127.0.0.1:5763
+Run msposd:
+./msposd -m /tmp/inav_pty -d -r 1030 --ahi 4 --matrix 11 -v
+
+on Windows (192.168.1.66), start sending recorded sensor data:
+G:\RC_model\INAV\Logs\fl2x\win64-x86_64\bin>fl2sitl.exe -verbose 3 -nostart -auto-arm "G:\RC_model\INAV\Logs\LOG00007.TXT"
+  
+enjoy!  

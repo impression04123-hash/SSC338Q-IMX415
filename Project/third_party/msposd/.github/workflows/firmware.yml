@@ -1,0 +1,39 @@
+name: Testbuild of OpenIPC
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  buildroot:
+    if: github.repository == 'openipc/msposd'
+    name: Firmware
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          # Sigmastar [I6E]
+          - ssc30kq_lite
+          - ssc338q_lite
+
+          # Hisilicon [HI3516EV200]
+          - hi3516ev200_lite
+          - hi3516ev300_lite
+
+          # Hisilicon [HI3536DV100]
+          - hi3536dv100_lite
+
+          # Goke [GK7205V200]
+          - gk7205v200_lite
+          - gk7205v210_lite
+          - gk7205v300_lite
+    steps:
+      - name: Build OpenIPC
+        env:
+          MSPOSD_VERSION: ${{ github.sha }}
+        run: |
+          git clone https://github.com/openipc/firmware --depth=1
+          cd firmware
+          make BOARD=${{matrix.platform}}_${{matrix.release}} MSPOSD_VERSION=${MSPOSD_VERSION} br-msposd

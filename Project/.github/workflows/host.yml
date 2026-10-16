@@ -1,0 +1,22 @@
+name: Host verification
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install development dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config libpcap-dev libsodium-dev libevent-dev ffmpeg
+      - name: Build and test project
+        run: bash scripts/build_host.sh
+      - name: SDK header checks
+        run: sh tests/hardware/syntax-check.sh
+      - name: Build WFB and verify encrypted FEC recovery
+        run: |
+          bash scripts/build_wfb.sh
+          python3 scripts/test_wfb_loopback.py build/wfb-host/bin
+          python3 tests/test_pipeline.py build/host build/wfb-host/bin
+          python3 tests/test_stage.py build/host build/wfb-host
+      - name: Verify vendored sources
+        working-directory: third_party
+        run: sha256sum -c SHA256SUMS

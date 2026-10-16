@@ -1,0 +1,13 @@
+#!/bin/sh
+# Foreground service entry: let BusyBox init/runit own the supervisor PID.
+# /etc/inittab example: ::respawn:/etc/init.d/S95fpv run /etc/fpv/air.ini
+set -eu
+action=${1:-run}
+config=${2:-/etc/fpv/air.ini}
+controller=${FPVCTL:-/usr/bin/fpvctl}
+case "$action" in
+    run|start) exec "$controller" run --config "$config" ;;
+    check) exec "$controller" check --config "$config" ;;
+    dry-run) exec "$controller" dry-run --config "$config" ;;
+    *) printf '%s\n' 'Usage: S95fpv {run|start|check|dry-run} [config.ini]' >&2; exit 2 ;;
+esac
